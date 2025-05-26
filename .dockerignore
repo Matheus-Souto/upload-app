@@ -1,0 +1,132 @@
+# Dependências
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Build do Next.js
+.next/
+out/
+
+# Arquivos de ambiente local
+.env*.local
+.env.example
+
+# Logs
+*.log
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory usado por ferramentas como istanbul
+coverage/
+
+# Diretório de dependências do nyc test coverage
+.nyc_output
+
+# Instrumentação Grunt intermediate storage (https://gruntjs.com/creating-plugins#storing-task-files)
+.grunt
+
+# Diretório de dependências do Bower (https://bower.io/)
+bower_components
+
+# Configuração do node-waf
+.lock-wscript
+
+# Addons binários compilados (https://nodejs.org/api/addons.html)
+build/Release
+
+# Diretórios de dependências
+node_modules/
+jspm_packages/
+
+# Arquivos de distribuição TypeScript
+*.tsbuildinfo
+
+# Cache opcional do npm
+.npm
+
+# Cache opcional do eslint
+.eslintcache
+
+# Cache do Microbundle
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+
+# Histórico opcional do REPL
+.node_repl_history
+
+# Saída do 'npm pack'
+*.tgz
+
+# Arquivo de integridade do Yarn
+.yarn-integrity
+
+# Arquivo de ambiente dotenv
+.env
+.env.test
+.env*.local
+
+# Cache do parcel-bundler (https://parceljs.org/)
+.cache
+.parcel-cache
+
+# Saída do next.js build
+.next
+
+# Saída do nuxt.js build / diretório gerado
+.nuxt
+dist
+
+# Arquivos do Gatsby
+.cache/
+public
+
+# Arquivo de dependências do Storybook
+.out
+.storybook-out
+
+# Arquivos temporários vuepress
+.temp
+.cache
+
+# Arquivo de cache/logs do Serverless webpack
+.serverless/
+
+# Arquivo de cache do FuseBox
+.fusebox/
+
+# Arquivos locais do DynamoDB
+.dynamodb/
+
+# Porta do TernJS
+.tern-port
+
+# Stores do VSCode
+.vscode-test
+
+# Cache do yarn v2
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.*
+
+# Git
+.git
+.gitignore
+README.md
+
+# Docker
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# Outros
+.DS_Store
+Thumbs.db 

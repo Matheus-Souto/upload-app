@@ -5,8 +5,8 @@ import { supabase } from "./supabase";
 
 export const authOptions: NextAuthOptions = {
   adapter: SupabaseAdapter({
-    url: process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    secret: process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    url: process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co',
+    secret: process.env.SUPABASE_SERVICE_ROLE_KEY || 'placeholder-service-key',
   }),
   providers: [
     CredentialsProvider({

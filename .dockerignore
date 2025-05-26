@@ -85,7 +85,6 @@ dist
 
 # Arquivos do Gatsby
 .cache/
-public
 
 # Arquivo de dependências do Storybook
 .out

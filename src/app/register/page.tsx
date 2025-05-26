@@ -55,6 +55,7 @@ export default function RegisterPage() {
         router.push('/login');
       }, 3000);
     } catch (err) {
+      console.error('Registration error:', err);
       setError('Ocorreu um erro ao criar a conta');
     }
   };

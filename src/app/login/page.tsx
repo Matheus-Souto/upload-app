@@ -41,6 +41,7 @@ export default function LoginPage() {
 
       router.push('/dashboard');
     } catch (error) {
+      console.error('Login error:', error);
       setError('Ocorreu um erro ao fazer login');
     }
   };

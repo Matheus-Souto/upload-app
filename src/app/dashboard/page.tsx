@@ -233,6 +233,14 @@ export default function DashboardPage() {
     }
   };
 
+  // Calcular estatísticas dos uploads
+  const errorCount = uploads
+    ? uploads.filter(upload => upload.status === 'error').length
+    : 0;
+  const pendingCount = uploads
+    ? uploads.filter(upload => upload.status === 'pending').length
+    : 0;
+
   // Funções para drag and drop
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -445,52 +453,53 @@ export default function DashboardPage() {
             </h2>
 
             {/* Status da fila */}
-            {queueStats && (
-              <div className="flex items-center space-x-2">
-                {queueStats.isProcessing && (
-                  <div className="flex items-center text-blue-600">
-                    <svg
-                      className="w-4 h-4 mr-1 animate-spin"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                      />
-                    </svg>
-                    Processando
-                  </div>
-                )}
+            <div className="flex items-center space-x-2">
+              {queueStats?.isProcessing && (
+                <div className="flex items-center text-blue-600">
+                  <svg
+                    className="w-4 h-4 mr-1 animate-spin"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                    />
+                  </svg>
+                  Processando
+                </div>
+              )}
 
-                {queueStats.waiting > 0 && (
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                    {queueStats.waiting} aguardando
-                  </span>
-                )}
+              {queueStats?.waiting && queueStats.waiting > 0 && (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                  {queueStats.waiting} aguardando
+                </span>
+              )}
 
-                {queueStats.active > 0 && (
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                    {queueStats.active} ativo
-                  </span>
-                )}
+              {queueStats?.active && queueStats.active > 0 && (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                  {queueStats.active} ativo
+                </span>
+              )}
 
-                {queueStats.failed > 0 && (
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                    {queueStats.failed} falhas
-                  </span>
-                )}
+              {/* Contar erros da lista atual de uploads */}
+              {errorCount > 0 && (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                  {errorCount} erro{errorCount > 1 ? 's' : ''}
+                </span>
+              )}
 
-                {!queueStats.isProcessing && queueStats.total === 0 && (
+              {!queueStats?.isProcessing &&
+                queueStats?.total === 0 &&
+                pendingCount === 0 && (
                   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                     Fila vazia
                   </span>
                 )}
-              </div>
-            )}
+            </div>
           </div>
 
           {isLoadingUploads ? (

@@ -3,42 +3,42 @@ version: '3.8'
 services:
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     ports:
       - '6379:6379'
     volumes:
       - redis_data:/data
-    healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    restart: unless-stopped
+    command: redis-server --appendonly yes
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+    networks:
+      - app-network
 
-  upload-app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+  app:
+    build: .
+    restart: unless-stopped
     ports:
       - '3000:3000'
     environment:
       - NODE_ENV=production
-      # Adicione suas variáveis de ambiente aqui
-      - NEXTAUTH_URL=http://localhost:3000
-      - NEXTAUTH_SECRET=your-secret-key-here
-      - N8N_WEBHOOK_URL=https://n8n-n8n.ugu7yu.easypanel.host/webhook/upload-arquivo
-      - NEXT_PUBLIC_SUPABASE_URL=https://syhmnoytyrbiwxtonicn.supabase.co
-      - NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN5aG1ub3l0eXJiaXd4dG9uaWNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDgwMzQzMDQsImV4cCI6MjA2MzYxMDMwNH0.l0q5gZZFAqrDe4N9h5Pt6n0PYaB9FYvW8u993FOkZUo
-      - SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN5aG1ub3l0eXJiaXd4dG9uaWNuIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0ODAzNDMwNCwiZXhwIjoyMDYzNjEwMzA0fQ.4HYnNr-y6cw7U1_uLGV0B421XuSGUC5XFO-0H1rIsOo
-      - SUPABASE_JWT_SECRET=p8E0//4wE42WP7tc8NkMbHtkjVMA6HcGVL0R8MgLBGR70TgE5SK0eVZ4hAHyyIqW5MDR4au2mjhb0eQZ+WFCYA==
-    restart: unless-stopped
-    healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:3000/api/health || exit 1']
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+      - NEXTAUTH_URL=${NEXTAUTH_URL}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - N8N_WEBHOOK_URL=${N8N_WEBHOOK_URL}
+      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - SUPABASE_JWT_SECRET=${SUPABASE_JWT_SECRET}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
     depends_on:
       - redis
+    networks:
+      - app-network
 
 volumes:
   redis_data:
+
+networks:
+  app-network:
+    driver: bridge

@@ -1,12 +1,25 @@
 version: '3.8'
 
 services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
   upload-app:
     build:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "3000:3000"
+      - '3000:3000'
     environment:
       - NODE_ENV=production
       # Adicione suas variáveis de ambiente aqui
@@ -19,8 +32,13 @@ services:
       - SUPABASE_JWT_SECRET=p8E0//4wE42WP7tc8NkMbHtkjVMA6HcGVL0R8MgLBGR70TgE5SK0eVZ4hAHyyIqW5MDR4au2mjhb0eQZ+WFCYA==
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health || exit 1"]
+      test: ['CMD', 'curl', '-f', 'http://localhost:3000/api/health || exit 1']
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s 
+      start_period: 40s
+    depends_on:
+      - redis
+
+volumes:
+  redis_data:

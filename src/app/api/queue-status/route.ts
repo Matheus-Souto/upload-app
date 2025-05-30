@@ -3,7 +3,7 @@ import { queueProcessor } from "@/lib/queue-processor";
 
 export async function GET() {
   try {
-    const status = queueProcessor.getQueueStatus();
+    const status = await queueProcessor.getQueueStatus();
     
     return NextResponse.json({
       queueLength: status.queueLength,

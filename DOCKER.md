@@ -6,6 +6,7 @@ Documentação para fazer deploy da aplicação de Upload de PDF na Digital Ocea
 
 - Digital Ocean Droplet com Easypanel instalado
 - Repositório Git configurado
+- **Servidor Redis** (incluído no Docker Compose)
 - Variáveis de ambiente configuradas
 
 ## 🚀 Deploy no Easypanel
@@ -39,6 +40,10 @@ NEXT_PUBLIC_SUPABASE_URL=https://syhmnoytyrbiwxtonicn.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=sua-anon-key
 SUPABASE_SERVICE_ROLE_KEY=sua-service-role-key
 SUPABASE_JWT_SECRET=sua-jwt-secret
+
+# Redis
+REDIS_HOST=redis
+REDIS_PORT=6379
 ```
 
 ### 4. **Configurações de Porta**

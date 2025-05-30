@@ -16,9 +16,13 @@ interface FileUpload {
 }
 
 interface QueueStatus {
-  queueLength: number;
+  waiting: number;
+  active: number;
+  completed: number;
+  failed: number;
+  total: number;
   isProcessing: boolean;
-  message: string;
+  error?: boolean;
 }
 
 interface AxiosError extends Error {
@@ -63,14 +67,18 @@ export default function DashboardPage() {
     },
   );
 
-  // Buscar status da fila
-  const { data: queueStatus } = useQuery<QueueStatus>({
-    queryKey: ['queue-status'],
+  // Buscar estatísticas da fila a cada 3 segundos
+  const { data: queueStats } = useQuery<QueueStatus>({
+    queryKey: ['queue-stats'],
     queryFn: async () => {
-      const response = await axios.get('/api/queue-status');
-      return response.data;
+      const response = await fetch('/api/queue-stats');
+      if (!response.ok) {
+        throw new Error('Erro ao buscar estatísticas da fila');
+      }
+      const data = await response.json();
+      return data.stats;
     },
-    refetchInterval: 2000, // Atualiza a cada 2 segundos
+    refetchInterval: 3000,
   });
 
   // Mutação para upload de arquivo
@@ -358,41 +366,46 @@ export default function DashboardPage() {
             </h2>
 
             {/* Status da fila */}
-            {queueStatus && (
+            {queueStats && (
               <div className="flex items-center space-x-2">
-                {queueStatus.isProcessing && (
+                {queueStats.isProcessing && (
                   <div className="flex items-center text-blue-600">
                     <svg
-                      className="animate-spin -ml-1 mr-2 h-4 w-4"
-                      xmlns="http://www.w3.org/2000/svg"
+                      className="w-4 h-4 mr-1 animate-spin"
                       fill="none"
+                      stroke="currentColor"
                       viewBox="0 0 24 24"
                     >
-                      <circle
-                        className="opacity-25"
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke="currentColor"
-                        strokeWidth="4"
-                      ></circle>
                       <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      ></path>
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                      />
                     </svg>
-                    <span className="text-sm">Processando...</span>
+                    Processando
                   </div>
                 )}
 
-                {queueStatus.queueLength > 0 && (
+                {queueStats.waiting > 0 && (
                   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-                    {queueStatus.queueLength} na fila
+                    {queueStats.waiting} aguardando
                   </span>
                 )}
 
-                {!queueStatus.isProcessing && queueStatus.queueLength === 0 && (
+                {queueStats.active > 0 && (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                    {queueStats.active} ativo
+                  </span>
+                )}
+
+                {queueStats.failed > 0 && (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                    {queueStats.failed} falhas
+                  </span>
+                )}
+
+                {!queueStats.isProcessing && queueStats.total === 0 && (
                   <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
                     Fila vazia
                   </span>

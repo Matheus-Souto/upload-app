@@ -2,6 +2,7 @@ import { Queue, Worker, Job } from 'bullmq';
 import axios from "axios";
 import FormData from "form-data";
 import { supabase } from "./supabase";
+import { Readable } from 'stream';
 
 // Definir a interface para dados do job
 interface UploadJobData {
@@ -47,9 +48,20 @@ async function processFileDirectly(id: number, fileName: string, userId: string,
       .update({ status: 'processing' })
       .eq('id', id);
 
+    // Converter Buffer para stream legível
+    const fileStream = new Readable({
+      read() {
+        this.push(fileBuffer);
+        this.push(null); // Sinaliza fim do stream
+      }
+    });
+
     // Montar o form-data para enviar ao n8n
     const n8nForm = new FormData();
-    n8nForm.append("file", fileBuffer, fileName);
+    n8nForm.append("file", fileStream, {
+      filename: fileName,
+      contentType: 'application/pdf'
+    });
     n8nForm.append("fileName", fileName);
     n8nForm.append("userId", userId);
 

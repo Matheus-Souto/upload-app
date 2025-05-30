@@ -16,62 +16,100 @@ export async function POST(request: NextRequest) {
     }
 
     const formData = await request.formData();
-    const file = formData.get("file") as File;
+    const files = formData.getAll("files") as File[];
 
-    if (!file) {
+    if (!files || files.length === 0) {
       return NextResponse.json(
         { error: "Nenhum arquivo enviado" },
         { status: 400 }
       );
     }
 
-    if (file.type !== "application/pdf") {
+    // Verificar limite de 10 arquivos
+    if (files.length > 10) {
       return NextResponse.json(
-        { error: "Apenas arquivos PDF são permitidos" },
+        { error: "Máximo de 10 arquivos permitidos por upload" },
         { status: 400 }
       );
     }
 
-    // Converter o arquivo para buffer
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-
-    // Salvar upload imediatamente no Supabase com status "pending"
-    const { data, error } = await supabase
-      .from('historico_uploads')
-      .insert({
-        nome_arquivo: file.name,
-        status: 'pending',
-        link: null,
-        user_id: session.user.id
-      })
-      .select()
-      .single();
-
-    if (error) {
-      console.error('Erro ao salvar no Supabase:', error);
-      return NextResponse.json(
-        { error: "Erro ao salvar histórico" },
-        { status: 500 }
-      );
+    // Validar todos os arquivos primeiro
+    for (const file of files) {
+      if (file.type !== "application/pdf") {
+        return NextResponse.json(
+          { error: `Arquivo "${file.name}" não é um PDF. Apenas arquivos PDF são permitidos.` },
+          { status: 400 }
+        );
+      }
     }
 
-    // Adicionar à fila de processamento
-    await queueProcessor.addToQueue(
-      data.id,
-      buffer,
-      file.name,
-      session.user.id
-    );
+    const uploadResults = [];
 
-    // Retornar resposta imediata com status pending
+    // Processar cada arquivo
+    for (const file of files) {
+      try {
+        // Converter o arquivo para buffer
+        const arrayBuffer = await file.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+
+        // Salvar upload imediatamente no Supabase com status "pending"
+        const { data, error } = await supabase
+          .from('historico_uploads')
+          .insert({
+            nome_arquivo: file.name,
+            status: 'pending',
+            link: null,
+            user_id: session.user.id
+          })
+          .select()
+          .single();
+
+        if (error) {
+          console.error(`Erro ao salvar ${file.name} no Supabase:`, error);
+          uploadResults.push({
+            fileName: file.name,
+            success: false,
+            error: "Erro ao salvar histórico"
+          });
+          continue;
+        }
+
+        // Adicionar à fila de processamento
+        await queueProcessor.addToQueue(
+          data.id,
+          buffer,
+          file.name,
+          session.user.id
+        );
+
+        uploadResults.push({
+          id: data.id,
+          fileName: data.nome_arquivo,
+          status: data.status,
+          createdAt: data.criado_em,
+          success: true
+        });
+
+      } catch (fileError) {
+        console.error(`Erro ao processar arquivo ${file.name}:`, fileError);
+        uploadResults.push({
+          fileName: file.name,
+          success: false,
+          error: "Erro ao processar arquivo"
+        });
+      }
+    }
+
+    const successCount = uploadResults.filter(result => result.success).length;
+    const errorCount = uploadResults.length - successCount;
+
+    // Retornar resposta com resultados de todos os uploads
     return NextResponse.json({
-      id: data.id,
-      fileName: data.nome_arquivo,
-      status: data.status,
-      createdAt: data.criado_em,
-      result: null,
-      message: "Arquivo adicionado à fila de processamento"
+      message: `${successCount} arquivo(s) adicionado(s) à fila de processamento`,
+      totalFiles: files.length,
+      successCount,
+      errorCount,
+      results: uploadResults
     });
 
   } catch (error) {

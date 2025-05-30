@@ -37,7 +37,7 @@ export default function DashboardPage() {
   const { status } = useSession();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isDragOver, setIsDragOver] = useState(false);
 
@@ -83,9 +83,13 @@ export default function DashboardPage() {
 
   // Mutação para upload de arquivo
   const uploadMutation = useMutation({
-    mutationFn: async (file: File) => {
+    mutationFn: async (files: File[]) => {
       const formData = new FormData();
-      formData.append('file', file);
+
+      // Adicionar todos os arquivos ao FormData
+      files.forEach(file => {
+        formData.append('files', file);
+      });
 
       const response = await axios.post('/api/upload', formData, {
         headers: {
@@ -102,15 +106,19 @@ export default function DashboardPage() {
       return response.data;
     },
     onSuccess: data => {
-      setSelectedFile(null);
+      setSelectedFiles([]);
       setUploadProgress(0);
 
       // Invalidar e refetch da lista de uploads
       queryClient.invalidateQueries({ queryKey: ['uploads'] });
 
       // Toast de sucesso
-      toast.success('Arquivo adicionado à fila!', {
-        description: `${data.fileName} foi adicionado à fila de processamento. Acompanhe o status no histórico.`,
+      toast.success(`${data.successCount} arquivo(s) adicionado(s) à fila!`, {
+        description: `${data.successCount} de ${
+          data.totalFiles
+        } arquivo(s) foram adicionados à fila de processamento.${
+          data.errorCount > 0 ? ` ${data.errorCount} arquivo(s) falharam.` : ''
+        }`,
       });
     },
     onError: (error: AxiosError) => {
@@ -120,7 +128,7 @@ export default function DashboardPage() {
       toast.error('Erro no processamento', {
         description:
           error.response?.data?.error ||
-          'Ocorreu um erro ao processar o arquivo.',
+          'Ocorreu um erro ao processar os arquivos.',
       });
     },
   });
@@ -172,27 +180,45 @@ export default function DashboardPage() {
     },
   });
 
-  const validateFile = (file: File) => {
-    if (file.type !== 'application/pdf') {
-      toast.error('Tipo de arquivo inválido', {
-        description: 'Por favor, selecione um arquivo PDF válido.',
+  const validateFiles = (files: FileList | File[]) => {
+    const fileArray = Array.from(files);
+
+    // Verificar limite de 10 arquivos
+    if (fileArray.length > 10) {
+      toast.error('Muitos arquivos selecionados', {
+        description: 'Por favor, selecione no máximo 10 arquivos por vez.',
       });
       return false;
     }
+
+    // Verificar se todos são PDFs
+    for (const file of fileArray) {
+      if (file.type !== 'application/pdf') {
+        toast.error('Tipo de arquivo inválido', {
+          description: `O arquivo "${file.name}" não é um PDF. Por favor, selecione apenas arquivos PDF.`,
+        });
+        return false;
+      }
+    }
+
     return true;
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file && validateFile(file)) {
-      setSelectedFile(file);
+    const files = event.target.files;
+    if (files && validateFiles(files)) {
+      setSelectedFiles(Array.from(files));
     }
   };
 
   const handleUpload = async () => {
-    if (selectedFile) {
-      uploadMutation.mutate(selectedFile);
+    if (selectedFiles.length > 0) {
+      uploadMutation.mutate(selectedFiles);
     }
+  };
+
+  const handleRemoveFile = (index: number) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleCancel = async (uploadId: string, fileName: string) => {
@@ -223,11 +249,8 @@ export default function DashboardPage() {
     setIsDragOver(false);
 
     const files = e.dataTransfer.files;
-    if (files.length > 0) {
-      const file = files[0];
-      if (validateFile(file)) {
-        setSelectedFile(file);
-      }
+    if (files.length > 0 && validateFiles(files)) {
+      setSelectedFiles(Array.from(files));
     }
   };
 
@@ -267,7 +290,7 @@ export default function DashboardPage() {
               className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer ${
                 isDragOver
                   ? 'border-indigo-500 bg-indigo-50'
-                  : selectedFile
+                  : selectedFiles.length > 0
                   ? 'border-green-500 bg-green-50'
                   : 'border-gray-300 hover:border-indigo-400 hover:bg-gray-50'
               }`}
@@ -281,6 +304,7 @@ export default function DashboardPage() {
                 onChange={handleFileChange}
                 className="hidden"
                 id="file-upload"
+                multiple
               />
 
               <div className="space-y-4">
@@ -289,7 +313,7 @@ export default function DashboardPage() {
                     className={`w-12 h-12 mb-4 ${
                       isDragOver
                         ? 'text-indigo-500'
-                        : selectedFile
+                        : selectedFiles.length > 0
                         ? 'text-green-500'
                         : 'text-gray-400'
                     }`}
@@ -307,21 +331,21 @@ export default function DashboardPage() {
 
                   {isDragOver ? (
                     <p className="text-lg font-medium text-indigo-600">
-                      Solte o arquivo aqui
+                      Solte os arquivos aqui
                     </p>
-                  ) : selectedFile ? (
+                  ) : selectedFiles.length > 0 ? (
                     <div className="text-center">
                       <p className="text-lg font-medium text-green-600 mb-2">
-                        Arquivo selecionado
+                        Arquivos selecionados
                       </p>
                       <p className="text-sm text-gray-600">
-                        {selectedFile.name}
+                        {selectedFiles.map(file => file.name).join(', ')}
                       </p>
                     </div>
                   ) : (
                     <div className="text-center">
                       <p className="text-lg font-medium text-gray-600 mb-2">
-                        Arraste e solte seu arquivo PDF aqui
+                        Arraste e solte seus arquivos PDF aqui
                       </p>
                       <p className="text-sm text-gray-500 mb-4">
                         ou clique para selecionar
@@ -330,7 +354,7 @@ export default function DashboardPage() {
                         htmlFor="file-upload"
                         className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 cursor-pointer"
                       >
-                        Selecionar Arquivo
+                        Selecionar Arquivos
                       </label>
                     </div>
                   )}
@@ -338,13 +362,68 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {selectedFile && (
+            {selectedFiles.length > 0 && (
+              <div className="mt-4 space-y-2">
+                <h3 className="text-sm font-medium text-gray-700">
+                  Arquivos selecionados ({selectedFiles.length}/10):
+                </h3>
+                <div className="space-y-2 max-h-32 overflow-y-auto">
+                  {selectedFiles.map((file, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center justify-between bg-gray-50 rounded-lg p-3"
+                    >
+                      <div className="flex items-center space-x-2">
+                        <svg
+                          className="w-4 h-4 text-red-500"
+                          fill="currentColor"
+                          viewBox="0 0 20 20"
+                        >
+                          <path
+                            fillRule="evenodd"
+                            d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                        <span className="text-sm text-gray-800 truncate max-w-xs">
+                          {file.name}
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          ({(file.size / 1024 / 1024).toFixed(2)} MB)
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => handleRemoveFile(index)}
+                        className="text-red-600 hover:text-red-800 p-1"
+                        title="Remover arquivo"
+                      >
+                        <svg
+                          className="w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M6 18L18 6M6 6l12 12"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {selectedFiles.length > 0 && (
               <button
                 onClick={handleUpload}
                 disabled={uploadMutation.isPending}
                 className="w-full bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:opacity-50"
               >
-                {uploadMutation.isPending ? 'Enviando...' : 'Enviar Arquivo'}
+                {uploadMutation.isPending ? 'Enviando...' : 'Enviar Arquivos'}
               </button>
             )}
 

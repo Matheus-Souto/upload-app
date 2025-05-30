@@ -12,6 +12,14 @@ interface UploadJobData {
   fileBuffer: Buffer;
 }
 
+// Tipo para Buffer serializado pelo Redis
+type SerializedBuffer = {
+  type: 'Buffer';
+  data: number[];
+} | {
+  data: number[];
+} | Buffer;
+
 // Flag para verificar se Redis está disponível
 let redisAvailable = false;
 
@@ -38,7 +46,7 @@ let uploadQueue: Queue<UploadJobData> | null = null;
 let uploadWorker: Worker<UploadJobData> | null = null;
 
 // Função para processar arquivo diretamente (fallback)
-async function processFileDirectly(id: number, fileName: string, userId: string, fileBuffer: Buffer) {
+async function processFileDirectly(id: number, fileName: string, userId: string, fileBuffer: SerializedBuffer) {
   console.log(`🔄 Processando arquivo diretamente: ${fileName} (ID: ${id})`);
 
   try {
@@ -48,22 +56,42 @@ async function processFileDirectly(id: number, fileName: string, userId: string,
       .update({ status: 'processing' })
       .eq('id', id);
 
-    // Verificar se fileBuffer é válido
-    if (!Buffer.isBuffer(fileBuffer)) {
-      throw new Error(`Arquivo ${fileName} não é um Buffer válido`);
+    // Debug: verificar o tipo e estrutura do fileBuffer
+    console.log(`🔍 Debug ${fileName}:`, {
+      isBuffer: Buffer.isBuffer(fileBuffer),
+      type: typeof fileBuffer,
+      constructor: fileBuffer?.constructor?.name,
+      hasData: 'data' in fileBuffer && fileBuffer.data ? 'sim' : 'não',
+      hasType: 'type' in fileBuffer && fileBuffer.type ? fileBuffer.type : 'undefined'
+    });
+
+    // Reconstituir Buffer se necessário (serialização do Redis)
+    let actualBuffer: Buffer;
+    
+    if (Buffer.isBuffer(fileBuffer)) {
+      actualBuffer = fileBuffer;
+    } else if (typeof fileBuffer === 'object' && fileBuffer !== null && 'data' in fileBuffer && Array.isArray(fileBuffer.data)) {
+      // Buffer serializado pelo Redis como { type: 'Buffer', data: [...] }
+      console.log(`🔄 Reconstituindo Buffer para ${fileName} a partir de dados serializados`);
+      actualBuffer = Buffer.from(fileBuffer.data);
+    } else if (typeof fileBuffer === 'object' && fileBuffer !== null && 'type' in fileBuffer && fileBuffer.type === 'Buffer') {
+      // Outra forma de serialização
+      throw new Error(`Formato de Buffer não suportado para ${fileName}. Use a serialização com array de dados.`);
+    } else {
+      throw new Error(`Arquivo ${fileName} não pôde ser convertido para Buffer válido. Tipo recebido: ${typeof fileBuffer}`);
     }
 
-    console.log(`📊 Tamanho do arquivo ${fileName}: ${fileBuffer.length} bytes`);
+    console.log(`📊 Tamanho do arquivo ${fileName}: ${actualBuffer.length} bytes`);
 
     // Converter Buffer para stream legível de forma mais robusta
-    const fileStream = Readable.from(fileBuffer);
+    const fileStream = Readable.from(actualBuffer);
 
     // Montar o form-data para enviar ao n8n
     const n8nForm = new FormData();
     n8nForm.append("file", fileStream, {
       filename: fileName,
       contentType: 'application/pdf',
-      knownLength: fileBuffer.length
+      knownLength: actualBuffer.length
     });
     n8nForm.append("fileName", fileName);
     n8nForm.append("userId", userId);

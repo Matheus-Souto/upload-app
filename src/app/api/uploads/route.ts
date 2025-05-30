@@ -152,10 +152,26 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Verificar se o upload pode ser cancelado (pending ou processing)
-    if (upload.status !== 'pending' && upload.status !== 'processing') {
+    console.log(`🔍 Tentativa de cancelamento - Upload ${uploadId}: ${upload.nome_arquivo}, Status: ${upload.status}`);
+
+    // Verificar se o upload pode ser cancelado baseado no status
+    if (upload.status === 'completed') {
       return NextResponse.json(
-        { error: "Este upload não pode ser cancelado" },
+        { error: "Este arquivo já foi processado com sucesso e não pode ser cancelado" },
+        { status: 400 }
+      );
+    }
+
+    if (upload.status === 'error') {
+      return NextResponse.json(
+        { error: "Este arquivo já teve erro no processamento e não pode ser cancelado" },
+        { status: 400 }
+      );
+    }
+
+    if (upload.status === 'cancelled') {
+      return NextResponse.json(
+        { error: "Este arquivo já está cancelado" },
         { status: 400 }
       );
     }
@@ -163,15 +179,35 @@ export async function PUT(request: NextRequest) {
     // Tentar cancelar da fila
     const cancelled = await queueProcessor.cancelFromQueue(parseInt(uploadId));
     
-    if (!cancelled && upload.status === 'processing') {
-      return NextResponse.json(
-        { error: "Não é possível cancelar um arquivo que já está sendo processado" },
-        { status: 400 }
-      );
+    if (!cancelled) {
+      // Se não conseguiu cancelar, verificar novamente o status atual
+      const { data: currentUpload } = await supabase
+        .from('historico_uploads')
+        .select('status')
+        .eq('id', uploadId)
+        .single();
+
+      if (currentUpload?.status === 'processing') {
+        return NextResponse.json(
+          { error: "Não é possível cancelar um arquivo que já está sendo processado" },
+          { status: 400 }
+        );
+      } else if (currentUpload?.status === 'completed') {
+        return NextResponse.json(
+          { error: "O arquivo foi processado enquanto tentava cancelar" },
+          { status: 400 }
+        );
+      } else {
+        return NextResponse.json(
+          { error: "Não foi possível cancelar o arquivo. Ele pode ter sido processado rapidamente." },
+          { status: 400 }
+        );
+      }
     }
 
     return NextResponse.json({ 
       message: "Upload cancelado com sucesso",
+      fileName: upload.nome_arquivo,
       id: uploadId
     });
 

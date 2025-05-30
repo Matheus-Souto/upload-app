@@ -238,16 +238,44 @@ class UploadQueueProcessor {
 
   async cancelFromQueue(uploadId: number): Promise<boolean> {
     try {
-      // Se Redis não estiver disponível, não é possível cancelar
-      if (!redisAvailable || !uploadQueue) {
-        console.log(`⚠️ Redis não disponível, não é possível cancelar upload ${uploadId}`);
+      console.log(`🔍 Tentando cancelar upload ${uploadId}...`);
+
+      // Primeiro, verificar o status atual no banco de dados
+      const { data: uploadData, error: fetchError } = await supabase
+        .from('historico_uploads')
+        .select('status, nome_arquivo')
+        .eq('id', uploadId)
+        .single();
+
+      if (fetchError || !uploadData) {
+        console.log(`❌ Upload ${uploadId} não encontrado no banco de dados`);
         return false;
       }
 
-      // Buscar jobs ativos na fila
+      console.log(`📊 Upload ${uploadId} (${uploadData.nome_arquivo}) - Status atual: ${uploadData.status}`);
+
+      // Se já foi processado, completado ou cancelado, não precisa cancelar
+      if (['completed', 'error', 'cancelled'].includes(uploadData.status)) {
+        console.log(`⚠️ Upload ${uploadId} já foi ${uploadData.status}, não é possível cancelar`);
+        return false;
+      }
+
+      // Se Redis não estiver disponível, apenas atualizar o status no banco
+      if (!redisAvailable || !uploadQueue) {
+        console.log(`⚠️ Redis não disponível, atualizando status para cancelled no banco`);
+        await supabase
+          .from('historico_uploads')
+          .update({ status: 'cancelled' })
+          .eq('id', uploadId);
+        return true;
+      }
+
+      // Buscar jobs na fila Redis
       const waitingJobs = await uploadQueue.getJobs(['waiting', 'delayed']);
       const activeJobs = await uploadQueue.getJobs(['active']);
       
+      console.log(`🔍 Buscando job para upload ${uploadId} - Waiting: ${waitingJobs.length}, Active: ${activeJobs.length}`);
+
       // Encontrar o job correspondente ao uploadId
       let targetJob = waitingJobs.find(job => job.data.id === uploadId);
       
@@ -261,18 +289,31 @@ class UploadQueueProcessor {
           .update({ status: 'cancelled' })
           .eq('id', uploadId);
 
-        console.log(`🚫 Upload ${uploadId} cancelado da fila Redis`);
+        console.log(`🚫 Upload ${uploadId} (${uploadData.nome_arquivo}) cancelado da fila Redis`);
         return true;
       }
 
-      // Verificar se está sendo processado
+      // Verificar se está sendo processado ativamente
       targetJob = activeJobs.find(job => job.data.id === uploadId);
       if (targetJob) {
-        console.log(`⚠️ Não é possível cancelar job ativo: ${uploadId}`);
+        console.log(`⚠️ Upload ${uploadId} (${uploadData.nome_arquivo}) está sendo processado ativamente, não é possível cancelar`);
         return false;
       }
 
-      console.log(`⚠️ Job não encontrado na fila para upload ${uploadId}`);
+      // Se chegou aqui, o job não está na fila mas o status indica que deveria estar
+      // Isso pode acontecer se o job foi processado muito rapidamente
+      console.log(`⚠️ Job ${uploadId} não encontrado na fila, mas status era ${uploadData.status}. Pode ter sido processado rapidamente.`);
+      
+      // Se o status ainda é pending, atualizar para cancelled
+      if (uploadData.status === 'pending') {
+        await supabase
+          .from('historico_uploads')
+          .update({ status: 'cancelled' })
+          .eq('id', uploadId);
+        console.log(`🚫 Status atualizado para cancelled para upload ${uploadId}`);
+        return true;
+      }
+
       return false;
     } catch (error) {
       console.error(`❌ Erro ao cancelar upload ${uploadId}:`, error);

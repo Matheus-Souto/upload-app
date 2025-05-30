@@ -48,27 +48,35 @@ async function processFileDirectly(id: number, fileName: string, userId: string,
       .update({ status: 'processing' })
       .eq('id', id);
 
-    // Converter Buffer para stream legível
-    const fileStream = new Readable({
-      read() {
-        this.push(fileBuffer);
-        this.push(null); // Sinaliza fim do stream
-      }
-    });
+    // Verificar se fileBuffer é válido
+    if (!Buffer.isBuffer(fileBuffer)) {
+      throw new Error(`Arquivo ${fileName} não é um Buffer válido`);
+    }
+
+    console.log(`📊 Tamanho do arquivo ${fileName}: ${fileBuffer.length} bytes`);
+
+    // Converter Buffer para stream legível de forma mais robusta
+    const fileStream = Readable.from(fileBuffer);
 
     // Montar o form-data para enviar ao n8n
     const n8nForm = new FormData();
     n8nForm.append("file", fileStream, {
       filename: fileName,
-      contentType: 'application/pdf'
+      contentType: 'application/pdf',
+      knownLength: fileBuffer.length
     });
     n8nForm.append("fileName", fileName);
     n8nForm.append("userId", userId);
 
     // Enviar para o webhook do n8n
     const n8nResponse = await axios.post(process.env.N8N_WEBHOOK_URL!, n8nForm, {
-      headers: n8nForm.getHeaders(),
+      headers: {
+        ...n8nForm.getHeaders(),
+        'Content-Length': undefined // Deixar o axios calcular automaticamente
+      },
       timeout: 300000, // 5 minutos timeout
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity
     });
 
     console.log(`✅ Arquivo ${fileName} processado com sucesso:`, n8nResponse.data);

@@ -22,8 +22,15 @@ const redisConnection = {
   maxRetriesPerRequest: null, // BullMQ requer null
   retryDelayOnFailover: 100,
   lazyConnect: true,
-  connectTimeout: 5000,        // 5 segundos timeout para conexão
-  commandTimeout: 3000,        // 3 segundos timeout para comandos
+  connectTimeout: parseInt(process.env.REDIS_CONNECT_TIMEOUT || '30000'),
+  commandTimeout: parseInt(process.env.REDIS_COMMAND_TIMEOUT || '15000'),
+  keepAlive: parseInt(process.env.REDIS_KEEP_ALIVE || '30000'),
+  enableOfflineQueue: false,   // Desabilitar fila offline
+  // Configurações de retry
+  retryDelayOnClusterDown: 300,
+  // Pool de conexões
+  family: 4,                   // IPv4
+  db: 0,                       // Database 0
 };
 
 let uploadQueue: Queue<UploadJobData> | null = null;
@@ -81,15 +88,15 @@ async function processFileDirectly(id: number, fileName: string, userId: string,
 // Tentar inicializar Redis
 try {
   // Criar a fila de uploads
-  uploadQueue = new Queue<UploadJobData>('upload-processing', {
+  uploadQueue = new Queue('upload-processing', {
     connection: redisConnection,
     defaultJobOptions: {
-      removeOnComplete: 10, // Manter apenas os últimos 10 jobs completos
-      removeOnFail: 50,     // Manter os últimos 50 jobs falhados para debug
-      attempts: 3,          // Tentar 3 vezes em caso de erro
+      removeOnComplete: 50,    // Manter mais jobs completos para análise
+      removeOnFail: 100,       // Manter mais jobs falhados para debug
+      attempts: 5,             // Mais tentativas em produção
       backoff: {
         type: 'exponential',
-        delay: 5000,        // Delay inicial de 5 segundos
+        delay: 10000,          // Delay inicial de 10 segundos
       },
     },
   });
@@ -103,21 +110,36 @@ try {
     },
     { 
       connection: redisConnection,
-      concurrency: 1 // Processar um arquivo por vez
+      concurrency: 1,          // Processar um arquivo por vez
+      // Configurações de polling otimizadas para produção
+      stalledInterval: 60000,  // 1 minuto para detectar jobs travados
+      maxStalledCount: 3,      // Máximo 3 tentativas para jobs travados
     }
   );
 
   // Event listeners para logging
   uploadWorker.on('completed', (job) => {
-    console.log(`✅ Job ${job.id} completado`);
+    console.log(`✅ Job ${job.id} completado com sucesso em ${new Date().toISOString()}`);
   });
 
   uploadWorker.on('failed', (job, err) => {
-    console.error(`❌ Job ${job?.id} falhou:`, err.message);
+    console.error(`❌ Job ${job?.id} falhou em ${new Date().toISOString()}:`, {
+      error: err.message,
+      stack: err.stack,
+      jobData: job?.data ? { fileName: job.data.fileName, id: job.data.id } : 'undefined'
+    });
   });
 
   uploadWorker.on('progress', (job, progress) => {
-    console.log(`📊 Job ${job.id} progresso: ${progress}%`);
+    console.log(`📊 Job ${job.id} progresso: ${progress}% - ${job.data.fileName}`);
+  });
+
+  uploadWorker.on('stalled', (jobId) => {
+    console.warn(`⚠️ Job ${jobId} travado (stalled) em ${new Date().toISOString()}`);
+  });
+
+  uploadWorker.on('error', (err) => {
+    console.error(`❌ Erro no worker em ${new Date().toISOString()}:`, err);
   });
 
   redisAvailable = true;

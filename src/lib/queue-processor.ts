@@ -50,11 +50,56 @@ async function processFileDirectly(id: number, fileName: string, userId: string,
   console.log(`🔄 Processando arquivo diretamente: ${fileName} (ID: ${id})`);
 
   try {
+    // VERIFICAÇÃO CRÍTICA: Verificar se o upload ainda deve ser processado
+    const { data: currentStatus, error: statusError } = await supabase
+      .from('historico_uploads')
+      .select('status')
+      .eq('id', id)
+      .single();
+
+    if (statusError) {
+      console.error(`❌ Erro ao verificar status do upload ${id}:`, statusError);
+      return;
+    }
+
+    if (currentStatus.status === 'cancelled') {
+      console.log(`⚠️ Upload ${id} (${fileName}) foi cancelado, parando processamento`);
+      return;
+    }
+
+    if (currentStatus.status === 'completed') {
+      console.log(`⚠️ Upload ${id} (${fileName}) já foi processado, evitando duplicação`);
+      return;
+    }
+
+    if (currentStatus.status === 'processing') {
+      console.log(`⚠️ Upload ${id} (${fileName}) já está sendo processado, evitando duplicação`);
+      return;
+    }
+
     // Atualizar status para "processing"
-    await supabase
+    const { error: updateError } = await supabase
       .from('historico_uploads')
       .update({ status: 'processing' })
-      .eq('id', id);
+      .eq('id', id)
+      .eq('status', 'pending'); // Só atualizar se ainda estiver pending
+
+    if (updateError) {
+      console.error(`❌ Erro ao atualizar status para processing:`, updateError);
+      return;
+    }
+
+    // Verificar se a atualização foi bem-sucedida (evita processamento duplo)
+    const { data: updatedStatus } = await supabase
+      .from('historico_uploads')
+      .select('status')
+      .eq('id', id)
+      .single();
+
+    if (updatedStatus?.status !== 'processing') {
+      console.log(`⚠️ Upload ${id} (${fileName}) não pôde ser marcado como processing, provavelmente já está sendo processado`);
+      return;
+    }
 
     // Debug: verificar o tipo e estrutura do fileBuffer
     console.log(`🔍 Debug ${fileName}:`, {
@@ -260,13 +305,25 @@ class UploadQueueProcessor {
         return false;
       }
 
+      // Se já está sendo processado, não pode cancelar
+      if (uploadData.status === 'processing') {
+        console.log(`⚠️ Upload ${uploadId} (${uploadData.nome_arquivo}) já está sendo processado, não é possível cancelar`);
+        return false;
+      }
+
       // Se Redis não estiver disponível, apenas atualizar o status no banco
       if (!redisAvailable || !uploadQueue) {
         console.log(`⚠️ Redis não disponível, atualizando status para cancelled no banco`);
-        await supabase
+        const { error: updateError } = await supabase
           .from('historico_uploads')
           .update({ status: 'cancelled' })
-          .eq('id', uploadId);
+          .eq('id', uploadId)
+          .eq('status', 'pending'); // Só cancelar se ainda estiver pending
+
+        if (updateError) {
+          console.error(`❌ Erro ao atualizar status para cancelled:`, updateError);
+          return false;
+        }
         return true;
       }
 
@@ -276,6 +333,12 @@ class UploadQueueProcessor {
       
       console.log(`🔍 Buscando job para upload ${uploadId} - Waiting: ${waitingJobs.length}, Active: ${activeJobs.length}`);
 
+      // Debug: logar os IDs dos jobs ativos
+      if (activeJobs.length > 0) {
+        const activeIds = activeJobs.map(job => job.data?.id).filter(id => id !== undefined);
+        console.log(`🔍 Jobs ativos encontrados: [${activeIds.join(', ')}]`);
+      }
+
       // Encontrar o job correspondente ao uploadId
       let targetJob = waitingJobs.find(job => job.data.id === uploadId);
       
@@ -284,10 +347,16 @@ class UploadQueueProcessor {
         await targetJob.remove();
         
         // Atualizar status no banco para "cancelled"
-        await supabase
+        const { error: updateError } = await supabase
           .from('historico_uploads')
           .update({ status: 'cancelled' })
-          .eq('id', uploadId);
+          .eq('id', uploadId)
+          .eq('status', 'pending'); // Só cancelar se ainda estiver pending
+
+        if (updateError) {
+          console.error(`❌ Erro ao atualizar status para cancelled:`, updateError);
+          return false;
+        }
 
         console.log(`🚫 Upload ${uploadId} (${uploadData.nome_arquivo}) cancelado da fila Redis`);
         return true;
@@ -296,24 +365,38 @@ class UploadQueueProcessor {
       // Verificar se está sendo processado ativamente
       targetJob = activeJobs.find(job => job.data.id === uploadId);
       if (targetJob) {
-        console.log(`⚠️ Upload ${uploadId} (${uploadData.nome_arquivo}) está sendo processado ativamente, não é possível cancelar`);
+        console.log(`⚠️ Upload ${uploadId} (${uploadData.nome_arquivo}) está sendo processado ativamente (Job ID: ${targetJob.id}), não é possível cancelar`);
         return false;
       }
 
-      // Se chegou aqui, o job não está na fila mas o status indica que deveria estar
-      // Isso pode acontecer se o job foi processado muito rapidamente
-      console.log(`⚠️ Job ${uploadId} não encontrado na fila, mas status era ${uploadData.status}. Pode ter sido processado rapidamente.`);
+      // Se chegou aqui, o job não está na fila
+      console.log(`⚠️ Job ${uploadId} não encontrado na fila Redis`);
       
-      // Se o status ainda é pending, atualizar para cancelled
-      if (uploadData.status === 'pending') {
-        await supabase
+      // Verificar novamente o status no banco antes de cancelar
+      const { data: finalStatus } = await supabase
+        .from('historico_uploads')
+        .select('status')
+        .eq('id', uploadId)
+        .single();
+
+      if (finalStatus?.status === 'pending') {
+        // Ainda está pending, pode ter sido adicionado à fila mas processado muito rapidamente
+        // ou nunca foi adicionado à fila Redis, cancelar no banco
+        const { error: updateError } = await supabase
           .from('historico_uploads')
           .update({ status: 'cancelled' })
-          .eq('id', uploadId);
-        console.log(`🚫 Status atualizado para cancelled para upload ${uploadId}`);
+          .eq('id', uploadId)
+          .eq('status', 'pending');
+
+        if (updateError) {
+          console.error(`❌ Erro ao atualizar status para cancelled:`, updateError);
+          return false;
+        }
+        console.log(`🚫 Status atualizado para cancelled para upload ${uploadId} (não encontrado na fila)`);
         return true;
       }
 
+      console.log(`⚠️ Upload ${uploadId} não pôde ser cancelado - Status atual: ${finalStatus?.status}`);
       return false;
     } catch (error) {
       console.error(`❌ Erro ao cancelar upload ${uploadId}:`, error);

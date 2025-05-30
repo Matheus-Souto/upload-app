@@ -176,6 +176,13 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    if (upload.status === 'processing') {
+      return NextResponse.json(
+        { error: "Este arquivo já está sendo processado e não pode ser cancelado" },
+        { status: 400 }
+      );
+    }
+
     // Tentar cancelar da fila
     const cancelled = await queueProcessor.cancelFromQueue(parseInt(uploadId));
     

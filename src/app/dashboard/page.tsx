@@ -10,9 +10,15 @@ import { toast } from 'sonner';
 interface FileUpload {
   id: string;
   fileName: string;
-  status: 'pending' | 'processing' | 'completed' | 'error';
+  status: 'pending' | 'processing' | 'completed' | 'error' | 'cancelled';
   createdAt: string;
   result?: string;
+}
+
+interface QueueStatus {
+  queueLength: number;
+  isProcessing: boolean;
+  message: string;
 }
 
 interface AxiosError extends Error {
@@ -37,6 +43,15 @@ export default function DashboardPage() {
     }
   }, [status, router]);
 
+  // Polling para atualizar uploads em tempo real
+  useEffect(() => {
+    const interval = setInterval(() => {
+      queryClient.invalidateQueries({ queryKey: ['uploads'] });
+    }, 3000); // Atualiza a cada 3 segundos
+
+    return () => clearInterval(interval);
+  }, [queryClient]);
+
   // Buscar histórico de uploads
   const { data: uploads, isLoading: isLoadingUploads } = useQuery<FileUpload[]>(
     {
@@ -47,6 +62,16 @@ export default function DashboardPage() {
       },
     },
   );
+
+  // Buscar status da fila
+  const { data: queueStatus } = useQuery<QueueStatus>({
+    queryKey: ['queue-status'],
+    queryFn: async () => {
+      const response = await axios.get('/api/queue-status');
+      return response.data;
+    },
+    refetchInterval: 2000, // Atualiza a cada 2 segundos
+  });
 
   // Mutação para upload de arquivo
   const uploadMutation = useMutation({
@@ -76,8 +101,8 @@ export default function DashboardPage() {
       queryClient.invalidateQueries({ queryKey: ['uploads'] });
 
       // Toast de sucesso
-      toast.success('Arquivo processado com sucesso!', {
-        description: `${data.fileName} foi processado e está disponível no histórico.`,
+      toast.success('Arquivo adicionado à fila!', {
+        description: `${data.fileName} foi adicionado à fila de processamento. Acompanhe o status no histórico.`,
       });
     },
     onError: (error: AxiosError) => {
@@ -88,6 +113,31 @@ export default function DashboardPage() {
         description:
           error.response?.data?.error ||
           'Ocorreu um erro ao processar o arquivo.',
+      });
+    },
+  });
+
+  // Mutação para cancelar upload
+  const cancelMutation = useMutation({
+    mutationFn: async (uploadId: string) => {
+      const response = await axios.put(
+        `/api/uploads?id=${uploadId}&action=cancel`,
+      );
+      return response.data;
+    },
+    onSuccess: () => {
+      // Invalidar e refetch da lista de uploads
+      queryClient.invalidateQueries({ queryKey: ['uploads'] });
+
+      // Toast de sucesso
+      toast.success('Upload cancelado com sucesso!');
+    },
+    onError: (error: AxiosError) => {
+      // Toast de erro
+      toast.error('Erro ao cancelar upload', {
+        description:
+          error.response?.data?.error ||
+          'Ocorreu um erro ao cancelar o upload.',
       });
     },
   });
@@ -134,6 +184,12 @@ export default function DashboardPage() {
   const handleUpload = async () => {
     if (selectedFile) {
       uploadMutation.mutate(selectedFile);
+    }
+  };
+
+  const handleCancel = async (uploadId: string, fileName: string) => {
+    if (window.confirm(`Tem certeza que deseja cancelar "${fileName}"?`)) {
+      cancelMutation.mutate(uploadId);
     }
   };
 
@@ -296,9 +352,54 @@ export default function DashboardPage() {
         </div>
 
         <div className="bg-white rounded-lg shadow-lg p-6">
-          <h2 className="text-2xl font-bold mb-4 text-gray-800">
-            Histórico de Uploads
-          </h2>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-2xl font-bold text-gray-800">
+              Histórico de Uploads
+            </h2>
+
+            {/* Status da fila */}
+            {queueStatus && (
+              <div className="flex items-center space-x-2">
+                {queueStatus.isProcessing && (
+                  <div className="flex items-center text-blue-600">
+                    <svg
+                      className="animate-spin -ml-1 mr-2 h-4 w-4"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      ></circle>
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      ></path>
+                    </svg>
+                    <span className="text-sm">Processando...</span>
+                  </div>
+                )}
+
+                {queueStatus.queueLength > 0 && (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                    {queueStatus.queueLength} na fila
+                  </span>
+                )}
+
+                {!queueStatus.isProcessing && queueStatus.queueLength === 0 && (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                    Fila vazia
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
 
           {isLoadingUploads ? (
             <p className="text-gray-700">Carregando histórico...</p>
@@ -336,6 +437,10 @@ export default function DashboardPage() {
                               ? 'bg-red-100 text-red-800'
                               : upload.status === 'processing'
                               ? 'bg-yellow-100 text-yellow-800'
+                              : upload.status === 'pending'
+                              ? 'bg-blue-100 text-blue-800'
+                              : upload.status === 'cancelled'
+                              ? 'bg-gray-100 text-gray-800'
                               : 'bg-gray-100 text-gray-800'
                           }`}
                         >
@@ -345,6 +450,10 @@ export default function DashboardPage() {
                             ? 'Erro'
                             : upload.status === 'processing'
                             ? 'Processando'
+                            : upload.status === 'pending'
+                            ? 'Na Fila'
+                            : upload.status === 'cancelled'
+                            ? 'Cancelado'
                             : 'Pendente'}
                         </span>
                       </td>
@@ -382,6 +491,32 @@ export default function DashboardPage() {
                               </svg>
                             </a>
                           )}
+
+                          {upload.status === 'pending' && (
+                            <button
+                              onClick={() =>
+                                handleCancel(upload.id, upload.fileName)
+                              }
+                              disabled={cancelMutation.isPending}
+                              className="inline-flex items-center px-3 py-1 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                              title="Cancelar upload"
+                            >
+                              <svg
+                                className="w-4 h-4"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M6 18L18 6M6 6l12 12"
+                                />
+                              </svg>
+                            </button>
+                          )}
+
                           <button
                             onClick={() =>
                               handleDelete(upload.id, upload.fileName)

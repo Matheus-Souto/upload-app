@@ -133,19 +133,13 @@ async function processFileDirectly(id: number, fileName: string, userId: string,
     
     let ocrResult;
     try {
-      // Chamar diretamente a API de OCR
-      ocrResult = await ocrService.extractTextFromPdf(actualBuffer, fileName);
-      
-      if (!ocrResult.success || !ocrResult.extracted_text) {
-        throw new Error(`Falha na extração de texto: ${ocrResult.error}`);
-      }
+      // Usar a função que inclui validação por template
+      ocrResult = await ocrService.processFileByTemplate(actualBuffer, fileName, template);
       
       console.log(`✅ OCR concluído para ${fileName}:`, {
         template,
-        textLength: ocrResult.extracted_text.length,
-        textPreview: ocrResult.extracted_text.substring(0, 200) + '...',
-        paginas_processadas: ocrResult.estatisticas_globais?.paginas_processadas,
-        confianca_media: ocrResult.estatisticas_globais?.confianca_media
+        textLength: ocrResult.extractedText.length,
+        textPreview: ocrResult.extractedText.length > 0 ? ocrResult.extractedText.substring(0, 200) + '...' : '[SEM TEXTO]'
       });
     } catch (ocrError) {
       console.error(`❌ Erro no OCR para ${fileName}:`, ocrError);
@@ -156,9 +150,17 @@ async function processFileDirectly(id: number, fileName: string, userId: string,
     console.log(`🚀 Enviando dados do OCR para webhook do template: ${template}`);
     
     try {
+      // Preparar payload com dados do OCR
+      const ocrData = {
+        success: true,
+        extracted_text: ocrResult.extractedText,
+        template: template,
+        fileName: fileName
+      };
+
       const n8nResult = await templateWebhookService.processOcrDataByTemplate(
         template as TemplateType,
-        ocrResult, // Enviar a resposta completa da API de OCR
+        ocrData, // Enviar dados estruturados
         fileName,
         userId
       );
@@ -183,8 +185,7 @@ async function processFileDirectly(id: number, fileName: string, userId: string,
         fileName, 
         template,
         link: n8nResult.link || n8nResult.result,
-        ocrTextLength: ocrResult.extracted_text?.length || 0,
-        ocrStats: ocrResult.estatisticas_globais
+        ocrTextLength: ocrResult.extractedText.length
       };
 
     } catch (templateError) {

@@ -125,6 +125,16 @@ export class OcrService {
 
       console.log(`✅ Texto extraído com sucesso do PDF: ${fileName}`);
       
+      // DEBUG: Log completo da resposta da API
+      console.log(`🔍 DEBUG - Resposta completa da API para ${fileName}:`, {
+        sucesso: response.data.sucesso,
+        filename: response.data.filename,
+        total_paginas: response.data.total_paginas,
+        texto_extraido_length: response.data.texto_extraido?.length || 0,
+        primeira_pagina: response.data.texto_extraido?.[0] || null,
+        estatisticas_globais: response.data.estatisticas_globais
+      });
+      
       // Mapear resposta da API para formato unificado
       const extractedText = response.data.texto_extraido
         ? response.data.texto_extraido.map((page: { texto: string }) => page.texto).join('\n\n')
@@ -132,6 +142,13 @@ export class OcrService {
       
       console.log(`📝 Tamanho do texto extraído: ${extractedText.length} caracteres`);
       
+      // DEBUG: Verificar se o texto foi extraído
+      if (extractedText.length === 0) {
+        console.warn(`⚠️ ATENÇÃO: Nenhum texto foi extraído do PDF ${fileName}`);
+        console.log(`🔍 Verificar se API retornou sucesso:`, response.data.sucesso);
+        console.log(`🔍 Dados brutos da API:`, JSON.stringify(response.data, null, 2));
+      }
+
       if (response.data.estatisticas_globais) {
         console.log(`📊 Estatísticas do OCR:`, {
           total_paginas: response.data.total_paginas,
@@ -186,14 +203,25 @@ export class OcrService {
     // Extrair texto do PDF primeiro
     const ocrResult = await this.extractTextFromPdf(pdfBuffer, fileName);
 
-    if (!ocrResult.success || !ocrResult.extracted_text) {
+    if (!ocrResult.success) {
       throw new Error(`Falha na extração de texto: ${ocrResult.error}`);
     }
 
-    console.log(`✅ Texto extraído para template ${template}: ${ocrResult.extracted_text.length} caracteres`);
+    // Verificar se há texto extraído ou se a API retornou sucesso
+    if (!ocrResult.extracted_text && !ocrResult.sucesso) {
+      throw new Error(`Nenhum texto foi extraído do PDF e API não retornou sucesso`);
+    }
+
+    // Mesmo se extracted_text estiver vazio, mas API retornou sucesso, continuar
+    const textLength = ocrResult.extracted_text?.length || 0;
+    console.log(`✅ Texto extraído para template ${template}: ${textLength} caracteres`);
+    
+    if (textLength === 0) {
+      console.warn(`⚠️ PDF ${fileName} não contém texto legível, mas API retornou sucesso`);
+    }
 
     return {
-      extractedText: ocrResult.extracted_text,
+      extractedText: ocrResult.extracted_text || '',
       templateType: template,
     };
   }

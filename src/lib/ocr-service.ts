@@ -15,17 +15,40 @@ export interface OcrResponse {
   error?: string;
   processing_time?: number;
   pages_processed?: number;
-  pages?: Array<{
-    page_number: number;
-    text: string;
-    confidence?: number;
+  filename?: string;
+  total_paginas?: number;
+  texto_extraido?: Array<{
+    pagina: number;
+    texto: string;
+    engine_usado: string;
+    metodo: string;
+    confianca: number;
+    estatisticas: {
+      caracteres: number;
+      linhas: number;
+      palavras: number;
+    };
+    parametros: {
+      enhancement_level: string;
+      engine_preference: string;
+      use_ai_engines: boolean;
+    };
   }>;
-  statistics?: {
-    total_pages: number;
-    successful_pages: number;
-    engine_used?: string;
-    consensus_confidence?: number;
+  configuracao_global?: {
+    enhancement_level: string;
+    engine_preference: string;
+    use_ai_engines: boolean;
   };
+  estatisticas_globais?: {
+    paginas_processadas: number;
+    engines_utilizados: string[];
+    confianca_media: number;
+    tempo_processamento_segundos: number;
+    total_caracteres: number;
+    total_palavras: number;
+    paginas_com_texto: number;
+  };
+  sucesso?: boolean;
 }
 
 interface AxiosErrorResponse {
@@ -101,25 +124,37 @@ export class OcrService {
       );
 
       console.log(`✅ Texto extraído com sucesso do PDF: ${fileName}`);
-      console.log(`📝 Tamanho do texto extraído: ${response.data.extracted_text?.length || 0} caracteres`);
       
-      if (response.data.statistics) {
+      // Mapear resposta da API para formato unificado
+      const extractedText = response.data.texto_extraido
+        ? response.data.texto_extraido.map((page: { texto: string }) => page.texto).join('\n\n')
+        : '';
+      
+      console.log(`📝 Tamanho do texto extraído: ${extractedText.length} caracteres`);
+      
+      if (response.data.estatisticas_globais) {
         console.log(`📊 Estatísticas do OCR:`, {
-          total_pages: response.data.statistics.total_pages,
-          successful_pages: response.data.statistics.successful_pages,
-          engine_used: response.data.statistics.engine_used,
-          consensus_confidence: response.data.statistics.consensus_confidence,
-          processing_time: response.data.processing_time
+          total_paginas: response.data.total_paginas,
+          paginas_processadas: response.data.estatisticas_globais.paginas_processadas,
+          engines_utilizados: response.data.estatisticas_globais.engines_utilizados,
+          confianca_media: response.data.estatisticas_globais.confianca_media,
+          tempo_processamento: response.data.estatisticas_globais.tempo_processamento_segundos,
+          total_caracteres: response.data.estatisticas_globais.total_caracteres
         });
       }
 
       return {
         success: true,
-        extracted_text: response.data.extracted_text,
-        processing_time: response.data.processing_time,
-        pages_processed: response.data.pages_processed,
-        pages: response.data.pages,
-        statistics: response.data.statistics,
+        extracted_text: extractedText,
+        processing_time: response.data.estatisticas_globais?.tempo_processamento_segundos,
+        pages_processed: response.data.estatisticas_globais?.paginas_processadas,
+        // Manter dados originais da API
+        filename: response.data.filename,
+        total_paginas: response.data.total_paginas,
+        texto_extraido: response.data.texto_extraido,
+        configuracao_global: response.data.configuracao_global,
+        estatisticas_globais: response.data.estatisticas_globais,
+        sucesso: response.data.sucesso,
       };
 
     } catch (error: unknown) {

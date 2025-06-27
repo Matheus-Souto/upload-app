@@ -33,11 +33,29 @@ interface AxiosError extends Error {
   };
 }
 
+type TemplateType =
+  | 'fatura-agibank'
+  | 'extrato-agibank'
+  | 'fatura-bmg'
+  | 'extrato-bmg';
+
+interface FileWithTemplate {
+  file: File;
+  template: TemplateType | null;
+}
+
+const TEMPLATE_OPTIONS = [
+  { value: 'fatura-agibank', label: 'Fatura AGIBANK' },
+  { value: 'extrato-agibank', label: 'Extrato AGIBANK' },
+  { value: 'fatura-bmg', label: 'Fatura BMG' },
+  { value: 'extrato-bmg', label: 'Extrato BMG' },
+] as const;
+
 export default function DashboardPage() {
   const { status } = useSession();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [selectedFiles, setSelectedFiles] = useState<FileWithTemplate[]>([]);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isDragOver, setIsDragOver] = useState(false);
 
@@ -207,18 +225,31 @@ export default function DashboardPage() {
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (files && validateFiles(files)) {
-      setSelectedFiles(Array.from(files));
+      setSelectedFiles(
+        Array.from(files).map(file => ({
+          file,
+          template: null,
+        })),
+      );
     }
   };
 
   const handleUpload = async () => {
     if (selectedFiles.length > 0) {
-      uploadMutation.mutate(selectedFiles);
+      uploadMutation.mutate(selectedFiles.map(file => file.file));
     }
   };
 
   const handleRemoveFile = (index: number) => {
     setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleTemplateChange = (index: number, template: TemplateType) => {
+    setSelectedFiles(prev =>
+      prev.map((fileItem, i) =>
+        i === index ? { ...fileItem, template } : fileItem,
+      ),
+    );
   };
 
   const handleCancel = async (uploadId: string, fileName: string) => {
@@ -258,9 +289,18 @@ export default function DashboardPage() {
 
     const files = e.dataTransfer.files;
     if (files.length > 0 && validateFiles(files)) {
-      setSelectedFiles(Array.from(files));
+      setSelectedFiles(
+        Array.from(files).map(file => ({
+          file,
+          template: null,
+        })),
+      );
     }
   };
+
+  const canUpload =
+    selectedFiles.length > 0 &&
+    selectedFiles.every(item => item.template !== null);
 
   if (status === 'loading') {
     return <div>Carregando...</div>;
@@ -347,7 +387,7 @@ export default function DashboardPage() {
                         Arquivos selecionados
                       </p>
                       <p className="text-sm text-gray-600">
-                        {selectedFiles.map(file => file.name).join(', ')}
+                        {selectedFiles.map(file => file.file.name).join(', ')}
                       </p>
                     </div>
                   ) : (
@@ -375,63 +415,123 @@ export default function DashboardPage() {
                 <h3 className="text-sm font-medium text-gray-700">
                   Arquivos selecionados ({selectedFiles.length}/10):
                 </h3>
-                <div className="space-y-2 max-h-32 overflow-y-auto">
-                  {selectedFiles.map((file, index) => (
+                <div className="space-y-3 max-h-64 overflow-y-auto">
+                  {selectedFiles.map((fileItem, index) => (
                     <div
                       key={index}
-                      className="flex items-center justify-between bg-gray-50 rounded-lg p-3"
+                      className="bg-gray-50 rounded-lg p-4 border border-gray-200"
                     >
-                      <div className="flex items-center space-x-2">
-                        <svg
-                          className="w-4 h-4 text-red-500"
-                          fill="currentColor"
-                          viewBox="0 0 20 20"
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-center space-x-2 flex-1 min-w-0">
+                          <svg
+                            className="w-4 h-4 text-red-500 flex-shrink-0"
+                            fill="currentColor"
+                            viewBox="0 0 20 20"
+                          >
+                            <path
+                              fillRule="evenodd"
+                              d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z"
+                              clipRule="evenodd"
+                            />
+                          </svg>
+                          <div className="flex-1 min-w-0">
+                            <span className="text-sm text-gray-800 font-medium truncate block">
+                              {fileItem.file.name}
+                            </span>
+                            <span className="text-xs text-gray-500">
+                              ({(fileItem.file.size / 1024 / 1024).toFixed(2)}{' '}
+                              MB)
+                            </span>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleRemoveFile(index)}
+                          className="text-red-600 hover:text-red-800 p-1 ml-2 flex-shrink-0"
+                          title="Remover arquivo"
                         >
-                          <path
-                            fillRule="evenodd"
-                            d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z"
-                            clipRule="evenodd"
-                          />
-                        </svg>
-                        <span className="text-sm text-gray-800 truncate max-w-xs">
-                          {file.name}
-                        </span>
-                        <span className="text-xs text-gray-500">
-                          ({(file.size / 1024 / 1024).toFixed(2)} MB)
-                        </span>
+                          <svg
+                            className="w-4 h-4"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M6 18L18 6M6 6l12 12"
+                            />
+                          </svg>
+                        </button>
                       </div>
-                      <button
-                        onClick={() => handleRemoveFile(index)}
-                        className="text-red-600 hover:text-red-800 p-1"
-                        title="Remover arquivo"
-                      >
-                        <svg
-                          className="w-4 h-4"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
+
+                      <div className="ml-6">
+                        <label className="block text-xs font-medium text-gray-600 mb-2">
+                          Selecione o template:
+                        </label>
+                        <select
+                          value={fileItem.template || ''}
+                          onChange={e =>
+                            handleTemplateChange(
+                              index,
+                              e.target.value as TemplateType,
+                            )
+                          }
+                          className="w-full text-sm border border-gray-300 rounded-md px-3 py-2 bg-white text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                         >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M6 18L18 6M6 6l12 12"
-                          />
-                        </svg>
-                      </button>
+                          <option value="" className="text-gray-500">
+                            Selecione um template...
+                          </option>
+                          {TEMPLATE_OPTIONS.map(option => (
+                            <option
+                              key={option.value}
+                              value={option.value}
+                              className="text-gray-900"
+                            >
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
                   ))}
                 </div>
+
+                {selectedFiles.some(item => item.template === null) && (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3">
+                    <div className="flex">
+                      <svg
+                        className="w-5 h-5 text-yellow-400 mr-2 flex-shrink-0"
+                        fill="currentColor"
+                        viewBox="0 0 20 20"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                      <p className="text-sm text-yellow-700">
+                        Selecione um template para todos os arquivos antes de
+                        enviar.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
             {selectedFiles.length > 0 && (
               <button
                 onClick={handleUpload}
-                disabled={uploadMutation.isPending}
-                className="w-full bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:opacity-50"
+                disabled={uploadMutation.isPending || !canUpload}
+                className="w-full bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {uploadMutation.isPending ? 'Enviando...' : 'Enviar Arquivos'}
+                {uploadMutation.isPending
+                  ? 'Enviando...'
+                  : !canUpload
+                  ? 'Selecione os templates para continuar'
+                  : 'Enviar Arquivos'}
               </button>
             )}
 

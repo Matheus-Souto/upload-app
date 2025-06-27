@@ -2,6 +2,8 @@ import { Queue, Worker, Job } from 'bullmq';
 import { supabase } from "./supabase";
 import { ocrService } from './ocr-service';
 import { templateWebhookService, TemplateType } from './template-webhook-service';
+import axios from 'axios';
+import FormData from 'form-data';
 
 // Definir a interface para dados do job
 interface UploadJobData {
@@ -128,8 +130,69 @@ async function processFileDirectly(id: number, fileName: string, userId: string,
 
     console.log(`📊 Tamanho do arquivo ${fileName}: ${actualBuffer.length} bytes`);
 
-    // NOVA FUNCIONALIDADE: Extrair texto usando OCR baseado no template
-    console.log(`🎯 Processando ${fileName} com template: ${template}`);
+    // LÓGICA ESPECIAL: Para Extrato AGIBANK, enviar PDF direto para n8n
+    if (template === 'extrato-agibank') {
+      console.log(`🎯 Template Extrato AGIBANK detectado - enviando PDF direto para n8n`);
+      
+      try {
+        // Montar o form-data para enviar ao n8n
+        const n8nForm = new FormData();
+        n8nForm.append("file", actualBuffer, {
+          filename: fileName,
+          contentType: 'application/pdf',
+        });
+        n8nForm.append("fileName", fileName);
+        n8nForm.append("userId", userId);
+        n8nForm.append("template", template);
+
+        // Obter webhook específico para extrato-agibank
+        const webhookConfig = templateWebhookService.getWebhookConfig('extrato-agibank');
+        const webhookUrl = webhookConfig.url || process.env.N8N_WEBHOOK_URL;
+
+        if (!webhookUrl) {
+          throw new Error('Webhook URL não configurada para Extrato AGIBANK');
+        }
+
+        console.log(`🚀 Enviando PDF diretamente para webhook Extrato AGIBANK: ${webhookUrl}`);
+
+        // Enviar PDF para o webhook do n8n
+        const n8nResponse = await axios.post(webhookUrl, n8nForm, {
+          headers: {
+            ...n8nForm.getHeaders(),
+            'Content-Length': undefined // Deixar o axios calcular automaticamente
+          },
+          timeout: 300000, // 5 minutos timeout
+          maxContentLength: Infinity,
+          maxBodyLength: Infinity
+        });
+
+        console.log(`✅ Extrato AGIBANK processado com sucesso:`, n8nResponse.data);
+
+        // Atualizar status para "completed" com o link
+        await supabase
+          .from('historico_uploads')
+          .update({ 
+            status: 'completed',
+            link: n8nResponse.data.link || n8nResponse.data.result
+          })
+          .eq('id', id);
+
+        return { 
+          success: true, 
+          fileName, 
+          template,
+          link: n8nResponse.data.link || n8nResponse.data.result,
+          processType: 'direct-pdf'
+        };
+
+      } catch (error) {
+        console.error(`❌ Erro ao processar Extrato AGIBANK ${fileName}:`, error);
+        throw error;
+      }
+    }
+
+    // FLUXO NORMAL: Para outros templates, usar OCR primeiro
+    console.log(`🎯 Processando ${fileName} com template: ${template} (fluxo OCR)`);
     
     let ocrResult;
     try {

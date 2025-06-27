@@ -86,8 +86,12 @@ export class TemplateWebhookService {
           extracted_text: ocrResponse.extracted_text,
           processing_time: ocrResponse.processing_time,
           pages_processed: ocrResponse.pages_processed,
-          pages: ocrResponse.pages,
-          statistics: ocrResponse.statistics
+          filename: ocrResponse.filename,
+          total_paginas: ocrResponse.total_paginas,
+          texto_extraido: ocrResponse.texto_extraido,
+          configuracao_global: ocrResponse.configuracao_global,
+          estatisticas_globais: ocrResponse.estatisticas_globais,
+          sucesso: ocrResponse.sucesso
         },
         metadata: {
           timestamp: new Date().toISOString(),

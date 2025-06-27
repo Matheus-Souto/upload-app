@@ -17,10 +17,19 @@ export async function POST(request: NextRequest) {
 
     const formData = await request.formData();
     const files = formData.getAll("files") as File[];
+    const templates = formData.getAll("templates") as string[];
 
     if (!files || files.length === 0) {
       return NextResponse.json(
         { error: "Nenhum arquivo enviado" },
+        { status: 400 }
+      );
+    }
+
+    // Verificar se há templates para todos os arquivos
+    if (templates.length !== files.length) {
+      return NextResponse.json(
+        { error: "Cada arquivo deve ter um template selecionado" },
         { status: 400 }
       );
     }
@@ -43,11 +52,27 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Validar templates
+    const validTemplates = ['fatura-agibank', 'extrato-agibank', 'fatura-bmg', 'extrato-bmg'];
+    for (const template of templates) {
+      if (!validTemplates.includes(template)) {
+        return NextResponse.json(
+          { error: `Template "${template}" não é válido` },
+          { status: 400 }
+        );
+      }
+    }
+
     const uploadResults = [];
 
-    // Processar cada arquivo
-    for (const file of files) {
+    // Processar cada arquivo com seu template correspondente
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const template = templates[i];
+      
       try {
+        console.log(`📤 Processando ${file.name} com template: ${template}`);
+        
         // Converter o arquivo para buffer
         const arrayBuffer = await file.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
@@ -68,23 +93,26 @@ export async function POST(request: NextRequest) {
           console.error(`Erro ao salvar ${file.name} no Supabase:`, error);
           uploadResults.push({
             fileName: file.name,
+            template,
             success: false,
             error: "Erro ao salvar histórico"
           });
           continue;
         }
 
-        // Adicionar à fila de processamento
+        // Adicionar à fila de processamento com template
         await queueProcessor.addToQueue(
           data.id,
           buffer,
           file.name,
-          session.user.id
+          session.user.id,
+          template
         );
 
         uploadResults.push({
           id: data.id,
           fileName: data.nome_arquivo,
+          template,
           status: data.status,
           createdAt: data.criado_em,
           success: true
@@ -94,6 +122,7 @@ export async function POST(request: NextRequest) {
         console.error(`Erro ao processar arquivo ${file.name}:`, fileError);
         uploadResults.push({
           fileName: file.name,
+          template,
           success: false,
           error: "Erro ao processar arquivo"
         });

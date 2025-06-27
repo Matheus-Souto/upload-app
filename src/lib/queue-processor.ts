@@ -1,15 +1,15 @@
 import { Queue, Worker, Job } from 'bullmq';
-import axios from "axios";
-import FormData from "form-data";
 import { supabase } from "./supabase";
-import { Readable } from 'stream';
+import { ocrService } from './ocr-service';
+import { templateWebhookService, TemplateType } from './template-webhook-service';
 
 // Definir a interface para dados do job
 interface UploadJobData {
   id: number;
   fileName: string;
   userId: string;
-  fileBuffer: Buffer;
+  fileBuffer: SerializedBuffer;
+  template: string;
 }
 
 // Tipo para Buffer serializado pelo Redis
@@ -46,7 +46,7 @@ let uploadQueue: Queue<UploadJobData> | null = null;
 let uploadWorker: Worker<UploadJobData> | null = null;
 
 // Função para processar arquivo diretamente (fallback)
-async function processFileDirectly(id: number, fileName: string, userId: string, fileBuffer: SerializedBuffer) {
+async function processFileDirectly(id: number, fileName: string, userId: string, fileBuffer: SerializedBuffer, template: string) {
   console.log(`🔄 Processando arquivo diretamente: ${fileName} (ID: ${id})`);
 
   try {
@@ -128,42 +128,65 @@ async function processFileDirectly(id: number, fileName: string, userId: string,
 
     console.log(`📊 Tamanho do arquivo ${fileName}: ${actualBuffer.length} bytes`);
 
-    // Converter Buffer para stream legível de forma mais robusta
-    const fileStream = Readable.from(actualBuffer);
+    // NOVA FUNCIONALIDADE: Extrair texto usando OCR baseado no template
+    console.log(`🎯 Processando ${fileName} com template: ${template}`);
+    
+    let ocrResult;
+    try {
+      ocrResult = await ocrService.processFileByTemplate(actualBuffer, fileName, template);
+      console.log(`✅ OCR concluído para ${fileName}:`, {
+        templateType: ocrResult.templateType,
+        textLength: ocrResult.extractedText.length,
+        textPreview: ocrResult.extractedText.substring(0, 200) + '...'
+      });
+    } catch (ocrError) {
+      console.error(`❌ Erro no OCR para ${fileName}:`, ocrError);
+      throw new Error(`Falha no OCR: ${ocrError}`);
+    }
 
-    // Montar o form-data para enviar ao n8n
-    const n8nForm = new FormData();
-    n8nForm.append("file", fileStream, {
-      filename: fileName,
-      contentType: 'application/pdf',
-      knownLength: actualBuffer.length
-    });
-    n8nForm.append("fileName", fileName);
-    n8nForm.append("userId", userId);
+    // FLUXO ATUALIZADO: Enviar dados do OCR para webhook específico do template
+    console.log(`🚀 Enviando dados do OCR para webhook do template: ${template}`);
+    
+    try {
+      const n8nResult = await templateWebhookService.processOcrDataByTemplate(
+        template as TemplateType,
+        {
+          success: true,
+          extracted_text: ocrResult.extractedText,
+          processing_time: 0, // Será preenchido pela API
+          pages_processed: 0,  // Será preenchido pela API
+        },
+        fileName,
+        userId
+      );
 
-    // Enviar para o webhook do n8n
-    const n8nResponse = await axios.post(process.env.N8N_WEBHOOK_URL!, n8nForm, {
-      headers: {
-        ...n8nForm.getHeaders(),
-        'Content-Length': undefined // Deixar o axios calcular automaticamente
-      },
-      timeout: 300000, // 5 minutos timeout
-      maxContentLength: Infinity,
-      maxBodyLength: Infinity
-    });
+      if (!n8nResult.success) {
+        throw new Error(`Erro no processamento do template: ${n8nResult.error}`);
+      }
 
-    console.log(`✅ Arquivo ${fileName} processado com sucesso:`, n8nResponse.data);
+      console.log(`✅ Template ${template} processado com sucesso para ${fileName}:`, n8nResult);
 
-    // Atualizar status para "completed" com o link
-    await supabase
-      .from('historico_uploads')
-      .update({ 
-        status: 'completed',
-        link: n8nResponse.data.link || n8nResponse.data.result
-      })
-      .eq('id', id);
+      // Atualizar status para "completed" com o link
+      await supabase
+        .from('historico_uploads')
+        .update({ 
+          status: 'completed',
+          link: n8nResult.link || n8nResult.result
+        })
+        .eq('id', id);
 
-    return { success: true, fileName, link: n8nResponse.data.link || n8nResponse.data.result };
+      return { 
+        success: true, 
+        fileName, 
+        template,
+        link: n8nResult.link || n8nResult.result,
+        ocrTextLength: ocrResult.extractedText.length
+      };
+
+    } catch (templateError) {
+      console.error(`❌ Erro no processamento do template ${template} para ${fileName}:`, templateError);
+      throw templateError;
+    }
 
   } catch (error) {
     console.error(`❌ Erro ao processar arquivo ${fileName}:`, error);
@@ -199,7 +222,7 @@ try {
     'upload-processing',
     async (job: Job<UploadJobData>) => {
       const { id, fileName, userId, fileBuffer } = job.data;
-      return await processFileDirectly(id, fileName, userId, fileBuffer);
+      return await processFileDirectly(id, fileName, userId, fileBuffer, job.data.template);
     },
     { 
       connection: redisConnection,
@@ -253,12 +276,12 @@ class UploadQueueProcessor {
     return UploadQueueProcessor.instance;
   }
 
-  async addToQueue(id: number, fileBuffer: Buffer, fileName: string, userId: string): Promise<void> {
+  async addToQueue(id: number, fileBuffer: Buffer, fileName: string, userId: string, template: string): Promise<void> {
     try {
       // Se Redis não estiver disponível, processar diretamente
       if (!redisAvailable || !uploadQueue) {
         console.log(`⚠️ Redis não disponível, processando ${fileName} diretamente`);
-        await processFileDirectly(id, fileName, userId, fileBuffer);
+        await processFileDirectly(id, fileName, userId, fileBuffer, template);
         return;
       }
 
@@ -267,17 +290,18 @@ class UploadQueueProcessor {
         fileName,
         userId,
         fileBuffer,
+        template,
       }, {
         priority: 1, // Prioridade normal
         delay: 0,    // Processar imediatamente
       });
 
-      console.log(`📄 Arquivo ${fileName} adicionado à fila Redis. Job ID: ${job.id}`);
+      console.log(`📄 Arquivo ${fileName} adicionado à fila Redis. Job ID: ${job.id}, Template: ${template}`);
     } catch (error) {
       console.error(`❌ Erro ao adicionar ${fileName} à fila:`, error);
       // Em caso de erro, tentar processar diretamente
       console.log(`🔄 Tentando processar ${fileName} diretamente...`);
-      await processFileDirectly(id, fileName, userId, fileBuffer);
+      await processFileDirectly(id, fileName, userId, fileBuffer, template);
     }
   }
 

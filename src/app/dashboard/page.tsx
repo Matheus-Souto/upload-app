@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import { toast } from 'sonner';
+import { TemplateType } from '@/lib/template-webhook-service';
 
 interface FileUpload {
   id: string;
@@ -32,12 +33,6 @@ interface AxiosError extends Error {
     };
   };
 }
-
-type TemplateType =
-  | 'fatura-agibank'
-  | 'extrato-agibank'
-  | 'fatura-bmg'
-  | 'extrato-bmg';
 
 interface FileWithTemplate {
   file: File;
@@ -101,12 +96,13 @@ export default function DashboardPage() {
 
   // Mutação para upload de arquivo
   const uploadMutation = useMutation({
-    mutationFn: async (files: File[]) => {
+    mutationFn: async (filesWithTemplates: FileWithTemplate[]) => {
       const formData = new FormData();
 
       // Adicionar todos os arquivos ao FormData
-      files.forEach(file => {
-        formData.append('files', file);
+      filesWithTemplates.forEach(fileItem => {
+        formData.append('files', fileItem.file);
+        formData.append('templates', fileItem.template!); // ! porque canUpload garante que não é null
       });
 
       const response = await axios.post('/api/upload', formData, {
@@ -236,7 +232,7 @@ export default function DashboardPage() {
 
   const handleUpload = async () => {
     if (selectedFiles.length > 0) {
-      uploadMutation.mutate(selectedFiles.map(file => file.file));
+      uploadMutation.mutate(selectedFiles);
     }
   };
 

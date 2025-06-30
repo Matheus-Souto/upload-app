@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Validar templates
-    const validTemplates = ['fatura-agibank', 'extrato-agibank', 'fatura-bmg', 'extrato-bmg'];
+    const validTemplates = ['fatura-agibank', 'extrato-agibank', 'fatura-bmg', 'extrato-bmg', 'pje-remuneracao', 'pje-horas'];
     for (const template of templates) {
       if (!validTemplates.includes(template)) {
         return NextResponse.json(

@@ -44,6 +44,8 @@ const TEMPLATE_OPTIONS = [
   { value: 'extrato-agibank', label: 'Extrato AGIBANK' },
   { value: 'fatura-bmg', label: 'Fatura BMG' },
   { value: 'extrato-bmg', label: 'Extrato BMG' },
+  { value: 'pje-remuneracao', label: 'PJE Remuneração' },
+  { value: 'pje-horas', label: 'PJE Horas' },
 ] as const;
 
 export default function DashboardPage() {

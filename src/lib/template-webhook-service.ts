@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { OcrResponse } from './ocr-service';
 
-export type TemplateType = 'fatura-agibank' | 'extrato-agibank' | 'fatura-bmg' | 'extrato-bmg';
+export type TemplateType = 'fatura-agibank' | 'extrato-agibank' | 'fatura-bmg' | 'extrato-bmg' | 'pje-remuneracao' | 'pje-horas';
 
 interface N8nResponse {
   success: boolean;
@@ -43,6 +43,14 @@ export class TemplateWebhookService {
     'extrato-bmg': {
       url: process.env.N8N_WEBHOOK_EXTRATO_BMG_URL || process.env.N8N_WEBHOOK_URL || '',
       description: 'Processamento de Extratos BMG'
+    },
+    'pje-remuneracao': {
+      url: process.env.N8N_WEBHOOK_PJE_REMUNERACAO_URL || process.env.N8N_WEBHOOK_URL || '',
+      description: 'Processamento de PJE Remuneração'
+    },
+    'pje-horas': {
+      url: process.env.N8N_WEBHOOK_PJE_HORAS_URL || process.env.N8N_WEBHOOK_URL || '',
+      description: 'Processamento de PJE Horas'
     }
   };
 

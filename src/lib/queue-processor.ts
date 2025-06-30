@@ -130,9 +130,10 @@ async function processFileDirectly(id: number, fileName: string, userId: string,
 
     console.log(`📊 Tamanho do arquivo ${fileName}: ${actualBuffer.length} bytes`);
 
-    // LÓGICA ESPECIAL: Para Extrato AGIBANK, enviar PDF direto para n8n
-    if (template === 'extrato-agibank') {
-      console.log(`🎯 Template Extrato AGIBANK detectado - enviando PDF direto para n8n`);
+    // LÓGICA ESPECIAL: Para alguns templates, enviar PDF direto para n8n (sem OCR)
+    const directPdfTemplates = ['extrato-agibank', 'pje-remuneracao', 'pje-horas'];
+    if (directPdfTemplates.includes(template)) {
+      console.log(`🎯 Template ${template} detectado - enviando PDF direto para n8n`);
       
       try {
         // Montar o form-data para enviar ao n8n
@@ -145,15 +146,15 @@ async function processFileDirectly(id: number, fileName: string, userId: string,
         n8nForm.append("userId", userId);
         n8nForm.append("template", template);
 
-        // Obter webhook específico para extrato-agibank
-        const webhookConfig = templateWebhookService.getWebhookConfig('extrato-agibank');
+        // Obter webhook específico para o template
+        const webhookConfig = templateWebhookService.getWebhookConfig(template as TemplateType);
         const webhookUrl = webhookConfig.url || process.env.N8N_WEBHOOK_URL;
 
         if (!webhookUrl) {
-          throw new Error('Webhook URL não configurada para Extrato AGIBANK');
+          throw new Error(`Webhook URL não configurada para ${template}`);
         }
 
-        console.log(`🚀 Enviando PDF diretamente para webhook Extrato AGIBANK: ${webhookUrl}`);
+        console.log(`🚀 Enviando PDF diretamente para webhook ${template}: ${webhookUrl}`);
 
         // Enviar PDF para o webhook do n8n
         const n8nResponse = await axios.post(webhookUrl, n8nForm, {
@@ -166,7 +167,7 @@ async function processFileDirectly(id: number, fileName: string, userId: string,
           maxBodyLength: Infinity
         });
 
-        console.log(`✅ Extrato AGIBANK processado com sucesso:`, n8nResponse.data);
+        console.log(`✅ ${template} processado com sucesso:`, n8nResponse.data);
 
         // Atualizar status para "completed" com o link
         await supabase
@@ -186,7 +187,7 @@ async function processFileDirectly(id: number, fileName: string, userId: string,
         };
 
       } catch (error) {
-        console.error(`❌ Erro ao processar Extrato AGIBANK ${fileName}:`, error);
+        console.error(`❌ Erro ao processar ${template} ${fileName}:`, error);
         throw error;
       }
     }

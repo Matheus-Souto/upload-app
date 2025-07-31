@@ -40,12 +40,12 @@ interface FileWithTemplate {
 }
 
 const TEMPLATE_OPTIONS = [
-  { value: 'fatura-agibank', label: 'Fatura AGIBANK' },
-  { value: 'extrato-agibank', label: 'Extrato AGIBANK' },
-  { value: 'fatura-bmg', label: 'Fatura BMG' },
-  { value: 'extrato-bmg', label: 'Extrato BMG' },
-  { value: 'pje-remuneracao', label: 'PJE Remuneração' },
-  { value: 'pje-horas', label: 'PJE Horas' },
+  { value: 'fatura-agibank', label: 'Fatura AGIBANK', disabled: true },
+  { value: 'extrato-agibank', label: 'Extrato AGIBANK', disabled: false },
+  { value: 'fatura-bmg', label: 'Fatura BMG', disabled: true },
+  { value: 'extrato-bmg', label: 'Extrato BMG', disabled: false },
+  { value: 'pje-remuneracao', label: 'PJE Remuneração', disabled: false },
+  { value: 'pje-horas', label: 'PJE Horas', disabled: false },
 ] as const;
 
 export default function DashboardPage() {
@@ -484,9 +484,16 @@ export default function DashboardPage() {
                             <option
                               key={option.value}
                               value={option.value}
-                              className="text-gray-900"
+                              disabled={option.disabled}
+                              className={
+                                option.disabled
+                                  ? 'text-gray-400 bg-gray-100'
+                                  : 'text-gray-900'
+                              }
                             >
-                              {option.label}
+                              {option.disabled
+                                ? `${option.label} (Indisponível)`
+                                : option.label}
                             </option>
                           ))}
                         </select>
